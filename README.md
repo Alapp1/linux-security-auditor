@@ -38,7 +38,7 @@ A comprehensive security scanning tool for Linux systems that identifies misconf
 ### 1. Clone and Setup
 
 ```bash
-git clone <repository-url>
+git clone git@github.com:Alapp1/linux-security-auditor.git
 cd linux-security-auditor
 chmod +x setup.sh
 ./setup.sh

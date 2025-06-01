@@ -1,8 +1,10 @@
-from flask import Blueprint, render_template, jsonify, request, redirect, url_for
 import json
 import os
-from datetime import datetime
 import threading
+from datetime import datetime
+
+from flask import Blueprint, jsonify, redirect, render_template, request, url_for
+
 from .models import ScanHistory, SecurityScanner
 
 main = Blueprint("main", __name__)
@@ -57,6 +59,7 @@ def trigger_scan():
     port = request.form.get("port", "2222")
     username = request.form.get("username", "root")
     password = request.form.get("password", "password")
+    ssh_key = request.form.get("ssh_key", "")
     target_name = request.form.get("target_name", "Custom Target")
 
     # Validate inputs
@@ -69,7 +72,14 @@ def trigger_scan():
     def run_scan():
         scan_status["running"] = True
         try:
-            SecurityScanner.run_scan(host, port, username, password, target_name)
+            SecurityScanner.run_scan(
+                host,
+                port,
+                username,
+                password,
+                target_name,
+                ssh_key if ssh_key else None,
+            )
             scan_status["last_scan"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         finally:
             scan_status["running"] = False

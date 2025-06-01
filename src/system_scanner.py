@@ -1,4 +1,4 @@
-from scanner_base import SecurityScanner, Finding
+from scanner_base import Finding, SecurityScanner
 
 
 class SystemScanner(SecurityScanner):
@@ -17,6 +17,7 @@ class SystemScanner(SecurityScanner):
                         "System",
                         "Insecure /etc/shadow permissions",
                         "Run: chmod 640 /etc/shadow",
+                        {"CIS": "6.1.3", "NIST": "AC-3"},
                     )
                 )
 
@@ -31,6 +32,7 @@ class SystemScanner(SecurityScanner):
                         "System",
                         f"Users with empty passwords: {empty_pass.strip()}",
                         "Set passwords for all users",
+                        {"CIS": "5.4.1.1", "NIST": "IA-5"},
                     )
                 )
 
@@ -45,6 +47,7 @@ class SystemScanner(SecurityScanner):
                         "System",
                         "World-writable files found in /etc",
                         "Review and fix file permissions",
+                        {"CIS": "6.1.10", "NIST": "AC-3"},
                     )
                 )
 

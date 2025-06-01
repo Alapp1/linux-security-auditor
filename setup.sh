@@ -1,12 +1,12 @@
 #!/bin/bash
 
-# Linux Security Auditor - Setup Script
-# This script sets up the development environment and test containers
+# Linux Security Auditor - Complete Setup Script
+# This script sets up the development environment, builds containers, and creates utility scripts
 
 set -e
 
-echo "Linux Security Auditor Setup"
-echo "============================="
+echo "Linux Security Auditor Complete Setup"
+echo "====================================="
 
 # Colors for output
 RED='\033[0;31m'
@@ -30,6 +30,35 @@ echo -e "${BLUE}[INFO] Detected platform: $PLATFORM${NC}"
 # Function to check if command exists
 command_exists() {
     command -v "$1" >/dev/null 2>&1
+}
+
+# Function to check if container exists
+container_exists() {
+    docker ps -a --format 'table {{.Names}}' | grep -q "^$1$"
+}
+
+# Function to check if container is running
+container_running() {
+    docker ps --format 'table {{.Names}}' | grep -q "^$1$"
+}
+
+# Function to start or create container
+start_container() {
+    local name=$1
+    local port=$2
+    local image=$3
+    
+    if container_exists "$name"; then
+        if container_running "$name"; then
+            echo -e "${GREEN}SUCCESS: $name is already running${NC}"
+        else
+            echo -e "${BLUE}Starting existing container: $name${NC}"
+            docker start "$name"
+        fi
+    else
+        echo -e "${BLUE}Creating and starting new container: $name${NC}"
+        docker run -d -p "$port":22 --name "$name" "$image"
+    fi
 }
 
 # Check and install Python dependencies
@@ -80,15 +109,16 @@ else
     exit 1
 fi
 
-# Build Docker containers
-echo -e "\n${YELLOW}[SETUP] Building Docker test containers...${NC}"
-
-# Check if containers already exist and are running
+# Clean up existing containers if they exist and are not running properly
+echo -e "\n${YELLOW}[SETUP] Managing existing containers...${NC}"
 if docker ps | grep -q "security-test-1\|security-test-2"; then
     echo -e "${YELLOW}WARNING: Existing containers found. Stopping and removing...${NC}"
     docker stop security-test-1 security-test-2 2>/dev/null || true
     docker rm security-test-1 security-test-2 2>/dev/null || true
 fi
+
+# Build Docker containers
+echo -e "\n${YELLOW}[SETUP] Building Docker test containers...${NC}"
 
 cd docker
 
@@ -100,14 +130,13 @@ docker build -f Dockerfile.vulnerable -t vulnerable-linux . --quiet
 
 echo -e "${GREEN}SUCCESS: Docker images built successfully${NC}"
 
+cd ..
+
 # Start test containers
 echo -e "\n${YELLOW}[SETUP] Starting test containers...${NC}"
 
-echo -e "${BLUE}Starting container 1 (basic) on port 2222...${NC}"
-docker run -d -p 2222:22 --name security-test-1 test-linux
-
-echo -e "${BLUE}Starting container 2 (vulnerable) on port 2223...${NC}"
-docker run -d -p 2223:22 --name security-test-2 vulnerable-linux
+start_container "security-test-1" "2222" "test-linux"
+start_container "security-test-2" "2223" "vulnerable-linux"
 
 # Wait a moment for containers to fully start
 echo -e "${BLUE}Waiting for containers to start...${NC}"
@@ -120,8 +149,6 @@ else
     echo -e "${RED}ERROR: Failed to start containers${NC}"
     exit 1
 fi
-
-cd ..
 
 # Test connectivity
 echo -e "\n${YELLOW}[TEST] Testing container connectivity...${NC}"
@@ -160,20 +187,77 @@ fi
 
 cd ..
 
-# Create useful aliases/scripts
+# Create utility scripts
 echo -e "\n${YELLOW}[SETUP] Creating utility scripts...${NC}"
 
-# Create start script
+# Create start containers script
 cat > start_containers.sh << 'EOF'
 #!/bin/bash
 echo "Starting Linux Security Auditor test containers..."
-docker start security-test-1 security-test-2 2>/dev/null || {
-    echo "WARNING: Containers don't exist. Running setup..."
-    ./setup.sh
+
+# Function to check if container exists
+container_exists() {
+    docker ps -a --format 'table {{.Names}}' | grep -q "^$1$"
 }
-echo "SUCCESS: Containers are running:"
-echo "   • Container 1 (basic): localhost:2222"
-echo "   • Container 2 (vulnerable): localhost:2223"
+
+# Function to check if container is running
+container_running() {
+    docker ps --format 'table {{.Names}}' | grep -q "^$1$"
+}
+
+# Function to start or create container
+start_container() {
+    local name=$1
+    local port=$2
+    local image=$3
+    
+    if container_exists "$name"; then
+        if container_running "$name"; then
+            echo "SUCCESS: $name is already running"
+        else
+            echo "Starting existing container: $name"
+            docker start "$name"
+        fi
+    else
+        echo "Creating and starting new container: $name"
+        docker run -d -p "$port":22 --name "$name" "$image"
+    fi
+}
+
+# Check if Docker is running
+if ! docker info >/dev/null 2>&1; then
+    echo "ERROR: Docker is not running. Please start Docker Desktop."
+    exit 1
+fi
+
+# Check if images exist, build if needed
+if ! docker image inspect test-linux >/dev/null 2>&1; then
+    echo "Building test-linux image..."
+    cd docker && docker build -t test-linux . && cd ..
+fi
+
+if ! docker image inspect vulnerable-linux >/dev/null 2>&1; then
+    echo "Building vulnerable-linux image..."
+    cd docker && docker build -f Dockerfile.vulnerable -t vulnerable-linux . && cd ..
+fi
+
+# Start containers
+start_container "security-test-1" "2222" "test-linux"
+start_container "security-test-2" "2223" "vulnerable-linux"
+
+# Wait a moment for containers to fully start
+sleep 3
+
+# Verify containers are running
+if docker ps | grep -q "security-test-1" && docker ps | grep -q "security-test-2"; then
+    echo "SUCCESS: Both containers are running"
+    echo "  • Container 1 (basic): localhost:2222"
+    echo "  • Container 2 (vulnerable): localhost:2223"
+    echo "Ready for security scanning!"
+else
+    echo "WARNING: One or more containers failed to start"
+    docker ps
+fi
 EOF
 
 # Create stop script
@@ -188,7 +272,22 @@ EOF
 cat > run_web.sh << 'EOF'
 #!/bin/bash
 echo "Starting Linux Security Auditor Web Interface..."
+
+# Auto-start containers if they're not running
+echo "Checking container status..."
+./start_containers.sh
+
+echo ""
 echo "Navigate to: http://127.0.0.1:5000"
+echo "Ready for security scanning!"
+echo ""
+echo "Features available:"
+echo "  • SSH key and password authentication"
+echo "  • Network port scanning"
+echo "  • System configuration auditing"
+echo "  • Compliance framework reporting"
+echo "  • Scan history tracking"
+echo ""
 cd src
 python3 run.py
 EOF
@@ -197,12 +296,36 @@ EOF
 cat > run_cli.sh << 'EOF'
 #!/bin/bash
 echo "Running Linux Security Auditor CLI scan..."
+
+# Ensure containers are running
+./start_containers.sh
+
+echo ""
+echo "Running CLI scan on test container..."
 cd src
 python3 main.py
 EOF
 
+# Create reset script for complete cleanup
+cat > reset.sh << 'EOF'
+#!/bin/bash
+echo "Resetting Linux Security Auditor environment..."
+
+# Stop and remove containers
+docker stop security-test-1 security-test-2 2>/dev/null || true
+docker rm security-test-1 security-test-2 2>/dev/null || true
+
+# Remove images (optional - uncomment if you want to rebuild everything)
+# docker rmi test-linux vulnerable-linux 2>/dev/null || true
+
+# Clean up scan data
+rm -f security_report.json scan_history.json scan_configs.json
+
+echo "Environment reset complete. Run ./setup.sh to rebuild."
+EOF
+
 # Make scripts executable
-chmod +x start_containers.sh stop_containers.sh run_web.sh run_cli.sh
+chmod +x start_containers.sh stop_containers.sh run_web.sh run_cli.sh reset.sh
 
 echo -e "${GREEN}SUCCESS: Utility scripts created${NC}"
 
@@ -215,8 +338,16 @@ echo -e "   • CLI Scan:      ${YELLOW}./run_cli.sh${NC}"
 echo -e "\n${BLUE}Container Management:${NC}"
 echo -e "   • Start:  ${YELLOW}./start_containers.sh${NC}"
 echo -e "   • Stop:   ${YELLOW}./stop_containers.sh${NC}"
+echo -e "   • Reset:  ${YELLOW}./reset.sh${NC}"
 echo -e "\n${BLUE}Test Targets:${NC}"
 echo -e "   • Container 1 (basic):      localhost:2222"
 echo -e "   • Container 2 (vulnerable): localhost:2223"
 echo -e "   • Credentials: root/password"
+echo -e "\n${BLUE}Features Available:${NC}"
+echo -e "   • SSH configuration scanning"
+echo -e "   • System security auditing"
+echo -e "   • Network port scanning"
+echo -e "   • SSH key authentication support"
+echo -e "   • Compliance framework reporting"
 echo -e "\n${YELLOW}INFO: Open http://127.0.0.1:5000 to access the web interface${NC}"
+echo -e "${YELLOW}INFO: Containers are running and ready for scanning!${NC}"

@@ -1,13 +1,14 @@
 import json
 import os
-from datetime import datetime
-import uuid
 import sys
+import uuid
+from datetime import datetime
 
 sys.path.append("..")
+from network_scanner import NetworkScanner
+from scanner_base import Finding
 from ssh_scanner_v2 import SSHScanner
 from system_scanner import SystemScanner
-from scanner_base import Finding
 
 
 class ScanHistory:
@@ -48,18 +49,37 @@ class ScanHistory:
 
 class SecurityScanner:
     @staticmethod
-    def run_scan(host, port, username, password, target_name="Custom Target"):
+    def run_scan(
+        host,
+        port,
+        username,
+        password=None,
+        target_name="Custom Target",
+        ssh_key_path=None,
+    ):
         """Run security scan on a specific target"""
         all_findings = []
 
         try:
+            # Network Scanner (runs first, doesn't need SSH)
+            print(f"Starting network scan of {host}...")
+            network_scanner = NetworkScanner(
+                host, int(port), username, password, ssh_key_path
+            )
+            network_results = network_scanner.scan()
+            all_findings.extend(network_results)
+
             # SSH Scanner
-            ssh_scanner = SSHScanner(host, int(port), username, password)
+            print(f"Starting SSH configuration scan...")
+            ssh_scanner = SSHScanner(host, int(port), username, password, ssh_key_path)
             ssh_results = ssh_scanner.scan()
             all_findings.extend(ssh_results)
 
             # System Scanner
-            sys_scanner = SystemScanner(host, int(port), username, password)
+            print(f"Starting system configuration scan...")
+            sys_scanner = SystemScanner(
+                host, int(port), username, password, ssh_key_path
+            )
             sys_results = sys_scanner.scan()
             all_findings.extend(sys_results)
 

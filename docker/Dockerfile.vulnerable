@@ -1,0 +1,21 @@
+FROM ubuntu:20.04
+RUN apt-get update && apt-get install -y openssh-server python3 sudo vim
+RUN mkdir /var/run/sshd
+
+# Create users first
+RUN useradd -m testuser
+
+# Set passwords (root gets password, testuser gets empty password)
+RUN echo 'root:password' | chpasswd
+RUN passwd -d testuser  # Remove password (makes it empty)
+
+# Configure SSH to allow empty passwords and root login
+RUN sed -i 's/#PermitRootLogin prohibit-password/PermitRootLogin yes/' /etc/ssh/sshd_config
+RUN sed -i 's/#PermitEmptyPasswords no/PermitEmptyPasswords yes/' /etc/ssh/sshd_config
+
+# Create world-writable files for testing
+RUN touch /etc/vulnerable_file
+RUN chmod 666 /etc/vulnerable_file
+
+EXPOSE 22
+CMD ["/usr/sbin/sshd", "-D"]

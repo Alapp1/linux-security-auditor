@@ -1,12 +1,12 @@
 #!/bin/bash
 
 # Linux Security Auditor - Complete Setup Script
-# This script sets up the development environment, builds containers, and creates utility scripts
+# This script sets up the development environment and starts containers
 
 set -e
 
-echo "Linux Security Auditor Complete Setup"
-echo "====================================="
+echo "Linux Security Auditor Setup"
+echo "============================"
 
 # Colors for output
 RED='\033[0;31m'
@@ -62,7 +62,7 @@ start_container() {
 }
 
 # Check and install Python dependencies
-echo -e "\n${YELLOW}[SETUP] Installing Python dependencies...${NC}"
+echo -e "\n${YELLOW}[SETUP] Checking Python installation...${NC}"
 if command_exists python3; then
     echo -e "${GREEN}SUCCESS: Python3 found${NC}"
 else
@@ -78,8 +78,14 @@ else
 fi
 
 # Install Python requirements
-echo -e "${BLUE}Installing Python packages...${NC}"
-pip3 install -r requirements.txt
+echo -e "\n${YELLOW}[SETUP] Installing Python dependencies...${NC}"
+if [ -f "requirements.txt" ]; then
+    pip3 install -r requirements.txt
+    echo -e "${GREEN}SUCCESS: Python packages installed${NC}"
+else
+    echo -e "${RED}ERROR: requirements.txt not found${NC}"
+    exit 1
+fi
 
 # Check Docker installation
 echo -e "\n${YELLOW}[SETUP] Checking Docker installation...${NC}"
@@ -109,12 +115,18 @@ else
     exit 1
 fi
 
-# Clean up existing containers if they exist and are not running properly
-echo -e "\n${YELLOW}[SETUP] Managing existing containers...${NC}"
-if docker ps | grep -q "security-test-1\|security-test-2"; then
-    echo -e "${YELLOW}WARNING: Existing containers found. Stopping and removing...${NC}"
+# Clean up existing containers if needed
+echo -e "\n${YELLOW}[SETUP] Cleaning up existing containers...${NC}"
+if docker ps -a | grep -q "security-test-1\|security-test-2"; then
+    echo -e "${YELLOW}INFO: Removing existing test containers...${NC}"
     docker stop security-test-1 security-test-2 2>/dev/null || true
     docker rm security-test-1 security-test-2 2>/dev/null || true
+fi
+
+# Check if docker directory exists
+if [ ! -d "docker" ]; then
+    echo -e "${RED}ERROR: docker directory not found${NC}"
+    exit 1
 fi
 
 # Build Docker containers
@@ -123,12 +135,20 @@ echo -e "\n${YELLOW}[SETUP] Building Docker test containers...${NC}"
 cd docker
 
 echo -e "${BLUE}Building basic test container...${NC}"
-docker build -t test-linux . --quiet
+if docker build -t test-linux . --quiet; then
+    echo -e "${GREEN}SUCCESS: Basic container built${NC}"
+else
+    echo -e "${RED}ERROR: Failed to build basic container${NC}"
+    exit 1
+fi
 
 echo -e "${BLUE}Building vulnerable test container...${NC}"
-docker build -f Dockerfile.vulnerable -t vulnerable-linux . --quiet
-
-echo -e "${GREEN}SUCCESS: Docker images built successfully${NC}"
+if docker build -f Dockerfile.vulnerable -t vulnerable-linux . --quiet; then
+    echo -e "${GREEN}SUCCESS: Vulnerable container built${NC}"
+else
+    echo -e "${RED}ERROR: Failed to build vulnerable container${NC}"
+    exit 1
+fi
 
 cd ..
 
@@ -138,23 +158,33 @@ echo -e "\n${YELLOW}[SETUP] Starting test containers...${NC}"
 start_container "security-test-1" "2222" "test-linux"
 start_container "security-test-2" "2223" "vulnerable-linux"
 
-# Wait a moment for containers to fully start
+# Wait for containers to fully start
 echo -e "${BLUE}Waiting for containers to start...${NC}"
 sleep 5
 
 # Verify containers are running
+echo -e "\n${YELLOW}[TEST] Verifying container status...${NC}"
 if docker ps | grep -q "security-test-1" && docker ps | grep -q "security-test-2"; then
     echo -e "${GREEN}SUCCESS: Both containers are running${NC}"
 else
     echo -e "${RED}ERROR: Failed to start containers${NC}"
+    echo -e "${YELLOW}Current container status:${NC}"
+    docker ps
     exit 1
 fi
 
 # Test connectivity
 echo -e "\n${YELLOW}[TEST] Testing container connectivity...${NC}"
+
+# Check if src directory exists
+if [ ! -d "src" ]; then
+    echo -e "${RED}ERROR: src directory not found${NC}"
+    exit 1
+fi
+
 cd src
 
-# Simple connection test
+# Test SSH connectivity to both containers
 python3 -c "
 import paramiko
 import sys
@@ -163,191 +193,65 @@ def test_connection(host, port, name):
     try:
         ssh = paramiko.SSHClient()
         ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        ssh.connect(host, port=port, username='root', password='password', timeout=5)
+        ssh.connect(host, port=port, username='root', password='password', timeout=10)
         ssh.close()
-        print(f'SUCCESS: {name} connection successful')
+        print(f'SUCCESS: {name} connection test passed')
         return True
     except Exception as e:
         print(f'ERROR: {name} connection failed: {e}')
         return False
 
-success1 = test_connection('localhost', 2222, 'Container 1')
-success2 = test_connection('localhost', 2223, 'Container 2')
+print('Testing SSH connectivity...')
+success1 = test_connection('localhost', 2222, 'Container 1 (basic)')
+success2 = test_connection('localhost', 2223, 'Container 2 (vulnerable)')
 
-if not (success1 and success2):
+if success1 and success2:
+    print('SUCCESS: All connectivity tests passed')
+else:
+    print('ERROR: One or more connectivity tests failed')
     sys.exit(1)
 "
 
 if [ $? -eq 0 ]; then
-    echo -e "${GREEN}SUCCESS: Container connectivity test passed${NC}"
+    echo -e "${GREEN}SUCCESS: Container connectivity verified${NC}"
 else
     echo -e "${RED}ERROR: Container connectivity test failed${NC}"
+    echo -e "${YELLOW}Troubleshooting tips:${NC}"
+    echo -e "  • Wait a few more seconds and try again"
+    echo -e "  • Check if containers are still running: docker ps"
+    echo -e "  • Try manual SSH: ssh -p 2222 root@localhost"
     exit 1
 fi
 
 cd ..
 
-# Create utility scripts
-echo -e "\n${YELLOW}[SETUP] Creating utility scripts...${NC}"
+# Clean up any existing scan data
+echo -e "\n${YELLOW}[CLEANUP] Removing old scan data...${NC}"
+rm -f security_report.json scan_history.json scan_configs.json *.pdf
 
-# Create start containers script
-cat > start_containers.sh << 'EOF'
-#!/bin/bash
-echo "Starting Linux Security Auditor test containers..."
-
-# Function to check if container exists
-container_exists() {
-    docker ps -a --format 'table {{.Names}}' | grep -q "^$1$"
-}
-
-# Function to check if container is running
-container_running() {
-    docker ps --format 'table {{.Names}}' | grep -q "^$1$"
-}
-
-# Function to start or create container
-start_container() {
-    local name=$1
-    local port=$2
-    local image=$3
-    
-    if container_exists "$name"; then
-        if container_running "$name"; then
-            echo "SUCCESS: $name is already running"
-        else
-            echo "Starting existing container: $name"
-            docker start "$name"
-        fi
-    else
-        echo "Creating and starting new container: $name"
-        docker run -d -p "$port":22 --name "$name" "$image"
-    fi
-}
-
-# Check if Docker is running
-if ! docker info >/dev/null 2>&1; then
-    echo "ERROR: Docker is not running. Please start Docker Desktop."
-    exit 1
-fi
-
-# Check if images exist, build if needed
-if ! docker image inspect test-linux >/dev/null 2>&1; then
-    echo "Building test-linux image..."
-    cd docker && docker build -t test-linux . && cd ..
-fi
-
-if ! docker image inspect vulnerable-linux >/dev/null 2>&1; then
-    echo "Building vulnerable-linux image..."
-    cd docker && docker build -f Dockerfile.vulnerable -t vulnerable-linux . && cd ..
-fi
-
-# Start containers
-start_container "security-test-1" "2222" "test-linux"
-start_container "security-test-2" "2223" "vulnerable-linux"
-
-# Wait a moment for containers to fully start
-sleep 3
-
-# Verify containers are running
-if docker ps | grep -q "security-test-1" && docker ps | grep -q "security-test-2"; then
-    echo "SUCCESS: Both containers are running"
-    echo "  • Container 1 (basic): localhost:2222"
-    echo "  • Container 2 (vulnerable): localhost:2223"
-    echo "Ready for security scanning!"
-else
-    echo "WARNING: One or more containers failed to start"
-    docker ps
-fi
-EOF
-
-# Create stop script
-cat > stop_containers.sh << 'EOF'
-#!/bin/bash
-echo "Stopping Linux Security Auditor test containers..."
-docker stop security-test-1 security-test-2 2>/dev/null || echo "Containers not running"
-echo "SUCCESS: Containers stopped"
-EOF
-
-# Create run web app script
-cat > run_web.sh << 'EOF'
-#!/bin/bash
-echo "Starting Linux Security Auditor Web Interface..."
-
-# Auto-start containers if they're not running
-echo "Checking container status..."
-./start_containers.sh
-
-echo ""
-echo "Navigate to: http://127.0.0.1:5000"
-echo "Ready for security scanning!"
-echo ""
-echo "Features available:"
-echo "  • SSH key and password authentication"
-echo "  • Network port scanning"
-echo "  • System configuration auditing"
-echo "  • Compliance framework reporting"
-echo "  • Scan history tracking"
-echo ""
-cd src
-python3 run.py
-EOF
-
-# Create run CLI script  
-cat > run_cli.sh << 'EOF'
-#!/bin/bash
-echo "Running Linux Security Auditor CLI scan..."
-
-# Ensure containers are running
-./start_containers.sh
-
-echo ""
-echo "Running CLI scan on test container..."
-cd src
-python3 main.py
-EOF
-
-# Create reset script for complete cleanup
-cat > reset.sh << 'EOF'
-#!/bin/bash
-echo "Resetting Linux Security Auditor environment..."
-
-# Stop and remove containers
-docker stop security-test-1 security-test-2 2>/dev/null || true
-docker rm security-test-1 security-test-2 2>/dev/null || true
-
-# Remove images (optional - uncomment if you want to rebuild everything)
-# docker rmi test-linux vulnerable-linux 2>/dev/null || true
-
-# Clean up scan data
-rm -f security_report.json scan_history.json scan_configs.json
-
-echo "Environment reset complete. Run ./setup.sh to rebuild."
-EOF
-
-# Make scripts executable
-chmod +x start_containers.sh stop_containers.sh run_web.sh run_cli.sh reset.sh
-
-echo -e "${GREEN}SUCCESS: Utility scripts created${NC}"
-
-# Final success message
+# Final success message and instructions
 echo -e "\n${GREEN}Setup Complete!${NC}"
 echo -e "${GREEN}===============${NC}"
-echo -e "\n${BLUE}Quick Start:${NC}"
-echo -e "   • Web Interface: ${YELLOW}./run_web.sh${NC}"
-echo -e "   • CLI Scan:      ${YELLOW}./run_cli.sh${NC}"
-echo -e "\n${BLUE}Container Management:${NC}"
-echo -e "   • Start:  ${YELLOW}./start_containers.sh${NC}"
-echo -e "   • Stop:   ${YELLOW}./stop_containers.sh${NC}"
-echo -e "   • Reset:  ${YELLOW}./reset.sh${NC}"
-echo -e "\n${BLUE}Test Targets:${NC}"
+echo -e "\n${BLUE}Environment Ready:${NC}"
+echo -e "   ✓ Python dependencies installed"
+echo -e "   ✓ Docker containers built and running"
+echo -e "   ✓ SSH connectivity verified"
+echo -e "\n${BLUE}Test Targets Available:${NC}"
 echo -e "   • Container 1 (basic):      localhost:2222"
 echo -e "   • Container 2 (vulnerable): localhost:2223"
 echo -e "   • Credentials: root/password"
-echo -e "\n${BLUE}Features Available:${NC}"
+echo -e "\n${BLUE}Available Features:${NC}"
 echo -e "   • SSH configuration scanning"
 echo -e "   • System security auditing"
 echo -e "   • Network port scanning"
-echo -e "   • SSH key authentication support"
+echo -e "   • SSH key authentication"
 echo -e "   • Compliance framework reporting"
-echo -e "\n${YELLOW}INFO: Open http://127.0.0.1:5000 to access the web interface${NC}"
-echo -e "${YELLOW}INFO: Containers are running and ready for scanning!${NC}"
+echo -e "   • PDF report generation"
+echo -e "\n${YELLOW}Quick Start Commands:${NC}"
+echo -e "   Web Interface: ${GREEN}cd src && python3 run.py${NC}"
+echo -e "   CLI Scan:      ${GREEN}cd src && python3 main.py${NC}"
+echo -e "\n${YELLOW}Container Management:${NC}"
+echo -e "   Start:  ${GREEN}docker start security-test-1 security-test-2${NC}"
+echo -e "   Stop:   ${GREEN}docker stop security-test-1 security-test-2${NC}"
+echo -e "   Status: ${GREEN}docker ps${NC}"
+echo -e "\n${BLUE}Ready to scan! Open http://127.0.0.1:5000 for the web interface.${NC}"

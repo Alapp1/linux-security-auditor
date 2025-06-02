@@ -27,9 +27,9 @@ class ScanHistory:
         scan_data["scan_id"] = str(uuid.uuid4())[:8]
         history.insert(0, scan_data)
 
-        # Keep only last 50 scans
-        if len(history) > 50:
-            history = history[:50]
+        # Keep only last 15 scans
+        if len(history) > 15:
+            history = history[:15]
 
         with open("scan_history.json", "w") as f:
             json.dump(history, f, indent=2)

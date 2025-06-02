@@ -60,19 +60,7 @@ The setup script will:
 - Start vulnerable test environments
 - Create utility scripts
 
-### 2. Launch Web Interface
-
-```bash
-./run_web.sh
-```
-
-Navigate to `http://127.0.0.1:5000`
-
-### 3. Run CLI Scan
-
-```bash
-./run_cli.sh
-```
+Then navigate to `http://127.0.0.1:5000`
 
 ## Test Environment
 
@@ -129,22 +117,6 @@ python3 main.py
 ```
 
 Outputs structured findings to terminal and saves `security_report.json`.
-
-### Container Management
-
-```bash
-# Start test containers
-./start_containers.sh
-
-# Stop test containers
-./stop_containers.sh
-
-# Reset environment
-./reset.sh
-
-# View container status
-docker ps
-```
 
 ## Sample Output
 
@@ -213,23 +185,6 @@ my_scanner = MyScanner(host, port, username, password, ssh_key_path)
 my_results = my_scanner.scan()
 all_findings.extend(my_results)
 ```
-
-## Deployment
-
-### Local Development
-
-```bash
-./run_web.sh
-```
-
-### Production Deployment
-
-```bash
-cd src
-export FLASK_ENV=production
-gunicorn -w 4 -b 0.0.0.0:8000 'app:create_app()'
-```
-
 ## Configuration
 
 ### Custom Scan Targets

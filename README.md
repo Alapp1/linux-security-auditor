@@ -264,7 +264,7 @@ pip3 install -r requirements.txt --force-reinstall
 
 ```bash
 # Use the reset script for complete cleanup
-./reset.sh
+./cleanup.sh
 
 # Then rebuild
 ./setup.sh
